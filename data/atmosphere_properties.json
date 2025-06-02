@@ -1,0 +1,6 @@
+{
+    "name": "MyCustomAtmosphere",
+    "color": [0.0, 0.7, 0.9],
+    "radius": 12.0,
+    "opacity": 0.4
+}
