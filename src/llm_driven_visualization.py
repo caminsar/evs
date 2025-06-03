@@ -82,7 +82,7 @@ def get_llm_response(prompt_text: str) -> str:
         llm_chat_history_ids = llm_model.generate(
             bot_input_ids,
             max_length=1024,
-            new_tokens_max_length=100, # Max tokens for the new response part
+            max_new_tokens=100, # Max tokens for the new response part
             pad_token_id=llm_tokenizer.eos_token_id,
             no_repeat_ngram_size=3,
             do_sample=True,

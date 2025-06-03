@@ -76,7 +76,7 @@ def get_llm_response(prompt_text: str) -> str:
         chat_history_ids = model.generate(
             bot_input_ids,
             max_length=1024,          # Max length of the entire conversation history
-            new_tokens_max_length=100, # Max length for the newly generated part of the response
+            max_new_tokens=100, # Max length for the newly generated part of the response
             pad_token_id=tokenizer.eos_token_id,
             no_repeat_ngram_size=3, # Helps prevent repetitive phrases
             do_sample=True,         # Enables sampling for less deterministic responses
