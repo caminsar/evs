@@ -7,7 +7,8 @@ components like atmosphere, water bodies, and ecosystems.
 
 It allows users to type commands in natural language, which are then interpreted
 by an LLM. The LLM's response is parsed to identify visualization actions,
-which are then executed to update a 3D scene.
+which are then executed to update a 3D scene. This version includes attention_mask
+handling for more robust LLM interaction.
 """
 import vtk
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -27,20 +28,29 @@ from visualization import Atmosphere, WaterBody, Ecosystem
 # --- LLM Setup ---
 llm_tokenizer = None
 llm_model = None
-llm_chat_history_ids = None
+# Global variables for storing chat history (both input_ids and attention_mask)
+llm_chat_history_input_ids = None
+llm_chat_history_attention_mask = None
 
 def initialize_llm_model():
     """
     Loads the pre-trained conversational LLM and its tokenizer.
 
     Uses 'microsoft/DialoGPT-small' by default. Sets global variables
-    `llm_tokenizer` and `llm_model`. Handles potential errors during loading,
-    such as network issues or incorrect model names.
+    `llm_tokenizer` and `llm_model`. Ensures the tokenizer has a `pad_token`
+    defined, which is important for batch processing and attention mask handling,
+    even if not strictly necessary for single sequence generation here.
+    Handles potential errors during loading.
     """
     global llm_tokenizer, llm_model
     try:
         model_name = 'microsoft/DialoGPT-small'
         llm_tokenizer = AutoTokenizer.from_pretrained(model_name)
+        # Set pad_token to eos_token if not already defined for this tokenizer
+        if llm_tokenizer.pad_token is None:
+            llm_tokenizer.pad_token = llm_tokenizer.eos_token
+            print(f"Tokenizer `pad_token` was None, set to `eos_token`: {llm_tokenizer.eos_token}")
+
         llm_model = AutoModelForCausalLM.from_pretrained(model_name)
         print(f"LLM Model '{model_name}' loaded successfully.")
     except Exception as e:
@@ -53,8 +63,9 @@ def get_llm_response(prompt_text: str) -> str:
     """
     Sends a text prompt to the loaded LLM and returns its textual response.
 
-    Maintains a simple conversation history by appending new input tokens to
-    previously generated chat history IDs. This provides some context to the LLM.
+    Maintains a conversation history by appending new input tokens and their
+    attention masks to previously generated chat history. This provides context
+    and proper padding information to the LLM.
 
     Args:
         prompt_text (str): The user's input text to send to the LLM.
@@ -63,38 +74,59 @@ def get_llm_response(prompt_text: str) -> str:
         str: The LLM's generated response as a string. Returns an error message
              if the model is not initialized or if an error occurs during generation.
     """
-    global llm_tokenizer, llm_model, llm_chat_history_ids
+    global llm_tokenizer, llm_model, llm_chat_history_input_ids, llm_chat_history_attention_mask
 
     if not llm_tokenizer or not llm_model:
         return "LLM Model not initialized. Please call initialize_llm_model() first."
 
     try:
-        # Encode the new user input, add the eos_token and return a tensor in Pytorch
-        new_user_input_ids = llm_tokenizer.encode(prompt_text + llm_tokenizer.eos_token, return_tensors='pt')
+        # Encode the new user input, add the eos_token, and return tensors & attention_mask
+        new_input = llm_tokenizer(
+            prompt_text + llm_tokenizer.eos_token,
+            return_tensors='pt',
+            return_attention_mask=True
+        )
+        new_user_input_ids = new_input.input_ids
+        new_user_attention_mask = new_input.attention_mask
 
-        # Append the new user input tokens to the chat history
-        if llm_chat_history_ids is not None:
-            bot_input_ids = torch.cat([llm_chat_history_ids, new_user_input_ids], dim=-1)
+        # Append the new user input tokens and attention mask to the chat history
+        if llm_chat_history_input_ids is not None:
+            bot_input_ids = torch.cat([llm_chat_history_input_ids, new_user_input_ids], dim=-1)
+            bot_attention_mask = torch.cat([llm_chat_history_attention_mask, new_user_attention_mask], dim=-1)
         else:
             bot_input_ids = new_user_input_ids
+            bot_attention_mask = new_user_attention_mask
 
-        # Generate a response
-        llm_chat_history_ids = llm_model.generate(
-            bot_input_ids,
-            max_length=1024,
-            max_new_tokens=100, # Max tokens for the new response part
-            pad_token_id=llm_tokenizer.eos_token_id,
+        # Generate a response including attention_mask
+        generated_ids = llm_model.generate(
+            input_ids=bot_input_ids,
+            attention_mask=bot_attention_mask,
+            max_length=1024,        # Max length of the entire conversation history (input + output)
+            max_new_tokens=100,     # Max tokens for the new response part
+            pad_token_id=llm_tokenizer.pad_token_id, # Use tokenizer's pad_token_id
+            eos_token_id=llm_tokenizer.eos_token_id,
             no_repeat_ngram_size=3,
             do_sample=True,
             top_k=50,
             top_p=0.95,
             temperature=0.7
         )
-        # Decode only the newly generated tokens
-        response = llm_tokenizer.decode(llm_chat_history_ids[:, bot_input_ids.shape[-1]:][0], skip_special_tokens=True)
+
+        # Update chat history with the full sequence generated
+        llm_chat_history_input_ids = generated_ids
+        # All tokens in generated_ids are attended to for future history
+        llm_chat_history_attention_mask = torch.ones_like(generated_ids)
+
+        # Decode only the newly generated part of the response
+        response_ids = generated_ids[:, bot_input_ids.shape[-1]:]
+        response = llm_tokenizer.decode(response_ids[0], skip_special_tokens=True)
+
         return response
     except Exception as e:
-        return f"Error during LLM interaction: {e}"
+        # Reset history on error to prevent corrupted state in next turn
+        llm_chat_history_input_ids = None
+        llm_chat_history_attention_mask = None
+        return f"Error during LLM interaction: {e}. Chat history has been reset."
 
 # --- Command Parsing Logic ---
 def parse_llm_command(llm_response: str) -> str:
@@ -135,6 +167,8 @@ def main():
     4. Executes the command by interacting with visualization components.
     The loop continues until the user types 'exit'.
     """
+    global llm_chat_history_input_ids, llm_chat_history_attention_mask # for clearing history if needed
+
     print("--- Initializing LLM Driven Visualization ---")
 
     # Initialize LLM
@@ -158,11 +192,9 @@ def main():
 
     render_window.Render()
     render_window_interactor.Initialize()
-    # Note: render_window_interactor.Start() is not called here to keep the CLI interactive.
-    # The window will update via render_window.Render() calls after actions.
 
     print("--- VTK Setup Complete. Render window is active. ---")
-    print("--- Type 'exit' to end the application. ---")
+    print("--- Type 'exit' to end the application, or 'reset history' to clear conversation. ---")
 
     # --- Main Loop ---
     while True:
@@ -171,6 +203,12 @@ def main():
         if user_prompt.lower() == 'exit':
             print("Exiting application.")
             break
+
+        if user_prompt.lower() == 'reset history':
+            llm_chat_history_input_ids = None
+            llm_chat_history_attention_mask = None
+            print("Conversation history with LLM has been reset.")
+            continue
 
         if not user_prompt.strip():
             continue
@@ -202,7 +240,7 @@ def main():
             print(f"LLM command: show_ecosystem. Visualizing ecosystem: {eco_viz.name}")
         elif command == "unknown_command":
             print(f"LLM response ('{llm_raw_response}') did not map to a known visualization command.")
-        else: # Should not happen with current parse_llm_command logic
+        else: # Should not happen
             print(f"Unprocessed command: {command}")
 
     print("--- Application Finished ---")
