@@ -55,7 +55,7 @@ class Ecosystem:
         plane_source.SetOrigin(-8.0, -8.0, z_level)
         plane_source.SetPoint1(8.0, -8.0, z_level)
         plane_source.SetPoint2(-8.0, 8.0, z_level)
-        
+
         plane_source.SetXResolution(10) # Number of cells in X
         plane_source.SetYResolution(10) # Number of cells in Y
         plane_source.Update()

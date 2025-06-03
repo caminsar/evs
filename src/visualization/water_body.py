@@ -51,7 +51,7 @@ class WaterBody:
         plane_source.SetOrigin(-10.0, -10.0, 0.0)
         plane_source.SetPoint1(10.0, -10.0, 0.0)
         plane_source.SetPoint2(-10.0, 10.0, 0.0)
-        
+
         plane_source.SetXResolution(20) # Number of cells in X direction
         plane_source.SetYResolution(20) # Number of cells in Y direction
         plane_source.Update()

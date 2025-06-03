@@ -187,7 +187,7 @@ def main():
             atmosphere_data_file = os.path.join(PROJECT_ROOT, "data", "atmosphere_properties.json")
             print(f"Attempting to load atmosphere data from: {atmosphere_data_file}")
             atmosphere_viz = Atmosphere(data_path=atmosphere_data_file)
-            atmosphere_viz.render(renderer) 
+            atmosphere_viz.render(renderer)
             render_window.Render()
             print(f"LLM command: show_atmosphere. Visualizing atmosphere: {atmosphere_viz.name}")
         elif command == "show_water":
@@ -204,7 +204,7 @@ def main():
             print(f"LLM response ('{llm_raw_response}') did not map to a known visualization command.")
         else: # Should not happen with current parse_llm_command logic
             print(f"Unprocessed command: {command}")
-        
+
     print("--- Application Finished ---")
 
 if __name__ == "__main__":

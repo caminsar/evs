@@ -44,7 +44,7 @@ class Atmosphere:
         # Load data if data_path is provided
         if self.data_path:
             self.load_data()
-        
+
         # Print after attempting to load data, so self.name might be updated
         print(f"Atmosphere component '{self.name}' initialized.")
 
@@ -71,12 +71,12 @@ class Atmosphere:
         try:
             with open(self.data_path, 'r') as f:
                 data = json.load(f)
-            
+
             self.name = data.get("name", self.name) # Update name from JSON if present
             self.custom_color = data.get("color")
             self.custom_radius = data.get("radius")
             self.custom_opacity = data.get("opacity")
-            
+
             # Basic validation for loaded data types
             if self.custom_color and not (isinstance(self.custom_color, list) and len(self.custom_color) == 3):
                 print(f"Warning: Invalid color format in {self.data_path}. Must be a list of 3 numbers. Using default.")
